@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const app = express();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -20,6 +21,23 @@ const client = new MongoClient(uri, {
   useUnifiedTopology: true,
   serverApi: ServerApiVersion.v1,
 });
+//jwt function
+
+const verifyJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).send({ message: "unauthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+    if (error) {
+      res.status(401).send({ message: "Forbidden access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
 //main async function
 
 async function run() {
@@ -33,6 +51,28 @@ async function run() {
 run();
 const serviceCollection = client.db("geniusCarService").collection("services");
 const orderCollection = client.db("geniusCarService").collection("orders");
+
+//jwt api
+app.post("/jwt", (req, res) => {
+  try {
+    const user = req.body;
+    const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+      expiresIn: "1h",
+    });
+    res.send({
+      success: true,
+      message: "successfully got the data",
+      token: { token },
+    });
+  } catch (error) {
+    console.log(error.name.red, error.message.bold, error.stack);
+    res.send({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 app.get("/services", async (req, res) => {
   try {
     const query = {};
@@ -51,6 +91,7 @@ app.get("/services", async (req, res) => {
     });
   }
 });
+
 //backend er data load er janno app.get
 app.get("/services/:id", async (req, res) => {
   try {
@@ -74,8 +115,13 @@ app.get("/services/:id", async (req, res) => {
   }
 });
 // all order dekhbo order.js database theke
-app.get("/orders", async (req, res) => {
+app.get("/orders", verifyJWT, async (req, res) => {
   try {
+    const decoded = req.decoded;
+    console.log("inside order api", decoded);
+    if (decoded.email !== req.query.email) {
+      res.status(403).send({ message: "unauthorized access" });
+    }
     let query = {};
     if (req.query.email) {
       query = {
@@ -98,7 +144,7 @@ app.get("/orders", async (req, res) => {
   }
 });
 //orders api(order=req.body likhlam na )data insert korlam post die database  te
-app.post("/orders", async (req, res) => {
+app.post("/orders", verifyJWT, async (req, res) => {
   try {
     const result = await orderCollection.insertOne(req.body);
 
@@ -119,7 +165,7 @@ app.post("/orders", async (req, res) => {
     });
   }
 });
-app.patch("/orders/:id", async (req, res) => {
+app.patch("/orders/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await orderCollection.updateOne(
@@ -146,7 +192,7 @@ app.patch("/orders/:id", async (req, res) => {
   }
 });
 
-app.delete("/orders/:id", async (req, res) => {
+app.delete("/orders/:id", verifyJWT, async (req, res) => {
   try {
     //kontake delete korsi name saho caile 142line must  dibo 141 dibo na,eki jinish 2nd toime delet nakorar janno emonvabe korbo(2.14mint e)
     // const product = await orders.findOne({ _id: ObjectId(id) });
